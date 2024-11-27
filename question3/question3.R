@@ -185,7 +185,8 @@ bayesian_model <- brm(
 
 # Posterior Predictive Checks
 pp_check(bayesian_model) +
-  labs(title = "Posterior Predictive Check", x = "Price (USD)", y = "Density")
+  labs(title = "Posterior Predictive Check", x = "Price (USD)", y = "Density") +
+  xlim(-10000, 20000)
 
 # Regularization (Ridge Regression)
 ridge_model <- cv.glmnet(
