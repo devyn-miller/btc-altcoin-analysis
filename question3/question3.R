@@ -245,14 +245,13 @@ print(paste("Adjusted R-squared for Model A:", adjusted_r2_a))
 print(paste("Adjusted R-squared for Model B:", adjusted_r2_b))
 
 
-
 # Time-Series Cross-Validation RMSE Comparison for Model B
 # Plot the RMSE for both models
 ggplot(data = comparison_results, aes(x = Model, y = RMSE, fill = Model)) +
   geom_bar(stat = "identity", show.legend = FALSE) +
   labs(title = "RMSE Comparison Between Models", x = "Model", y = "RMSE") +
   theme_minimal() +
-  scale_fill_manual(values = c("skyblue", "lightgreen"))
+  scale_fill_manual(values = c("magenta", "cyan"))
 
 # Model Predictions and Residuals Plot for Model A and Model B
 # Compare the predictions and residuals visually
@@ -261,34 +260,34 @@ predictions_b <- predict(model_b, merged_data)
 
 # Plot Residuals for Model A and Model B
 ggplot() +
-  geom_line(aes(x = merged_data$date, y = residuals(model_a), color = "Model A Residuals"), size = 1.2) +
-  geom_line(aes(x = merged_data$date, y = residuals(model_b), color = "Model B Residuals"), size = 1.2) +
+  geom_line(aes(x = merged_data$date, y = residuals(model_a), color = "Model A Residuals"), size = 0.6) +
+  geom_line(aes(x = merged_data$date, y = residuals(model_b), color = "Model B Residuals"), size = 0.6) +
   labs(
     title = "Residuals of Model A and Model B", 
     x = "Date", 
     y = "Residuals"
   ) +
-  scale_color_manual(values = c("Model A Residuals" = "darkblue", "Model B Residuals" = "darkorange")) +
+  scale_color_manual(values = c("Model A Residuals" = "magenta", "Model B Residuals" = "cyan")) +
   theme_minimal() +
   theme(legend.title = element_blank()) +
   theme(legend.position = "top") +
-  scale_color_manual(name = "Model", values = c("darkblue", "darkorange"))
+  scale_color_manual(name = "Model", values = c("magenta", "cyan"))
 
 # Prediction vs Actual Values Plot (Compare Model A and Model B Predictions)
 ggplot() +
-  geom_line(aes(x = merged_data$date, y = predictions_a, color = "Model A Predictions"), size = 1.2) +
-  geom_line(aes(x = merged_data$date, y = predictions_b, color = "Model B Predictions"), size = 1.2) +
-  geom_line(aes(x = merged_data$date, y = merged_data$altcoin_price, color = "Actual Prices"), size = 1.2, linetype = "solid") +
+  geom_line(aes(x = merged_data$date, y = predictions_a, color = "Model A Predictions"), size = 0.6) +
+  geom_line(aes(x = merged_data$date, y = predictions_b, color = "Model B Predictions"), size = 0.6) +
+  geom_line(aes(x = merged_data$date, y = merged_data$altcoin_price, color = "Actual Prices"), size = 0.6, linetype = "solid") +
   labs(
     title = "Predictions vs Actual Prices for Model A and Model B", 
     x = "Date", 
     y = "Price (USD)"
   ) +
-  scale_color_manual(values = c("Model A Predictions" = "blue", "Model B Predictions" = "red", "Actual Prices" = "black")) +
+  scale_color_manual(values = c("Model A Predictions" = "magenta", "Model B Predictions" = "cyan", "Actual Prices" = "black")) +
   theme_minimal() +
   theme(legend.title = element_blank()) +
   theme(legend.position = "top") +
-  scale_color_manual(name = "Legend", values = c("blue", "red", "black"))
+  scale_color_manual(name = "Legend", values = c("black", "magenta", "cyan"))
 
 # Bayesian Posterior Predictive Checks for Model B
 pp_check(bayesian_model) +
