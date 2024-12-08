@@ -1,0 +1,486 @@
+---
+title: "Final Project"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+# Final Project
+
+## Imports
+
+```{r echo=FALSE}
+# API
+library(httr)
+library(jsonlite)
+
+# Time Series
+library(forecast)
+library(tseries)
+
+# Plotting
+library(ggplot2)
+library(gridExtra)
+```
+
+## API Initialization
+
+```{r}
+credentials_file <- "CREDENTIALS.json"
+credentials <- fromJSON(credentials_file)
+
+api_key <- credentials$CRYPTOCOMPARE_API_KEY
+```
+
+### API Test Query
+
+```{r}
+url <- "https://min-api.cryptocompare.com/data/price"
+parameters <- list(
+  fsym = "BTC",
+  tsyms = "USD" 
+)
+
+headers <- add_headers(
+  authorization = paste("Apikey", api_key)  # Add your API key to the header
+)
+response <- GET(url, query=parameters, headers)
+```
+
+```{r}
+data <- content(response, as="text", encoding="UTF-8")
+parsed_data <- fromJSON(data, flatten=TRUE)
+print(parsed_data)
+```
+
+## Question 2
+
+How well can an ARIMA model predict the short-term price movements of altcoins (e.g., Ethereum, Solana, Sui, and Litecoin) based on historical Bitcoin price data and which altcoin follows Bitcoin the most?
+
+### Load Data
+
+```{r}
+url <- "https://min-api.cryptocompare.com/data/v2/histohour"
+toTs <- as.numeric(as.POSIXct("2024-11-24 00:00:00", tz="UTC"))
+limit <- 7 * 24
+```
+
+#### Bitcoin (BTC)
+
+```{r}
+parameters <- list(
+  fsym = "BTC",
+  tsym = "USD",
+  limit = limit,
+  toTs = toTs
+)
+response <- GET(url, query=parameters, headers)
+```
+
+```{r}
+data <- content(response, as = "parsed", encoding = "UTF-8")
+btc_prices <- data$Data$Data
+btc_prices_df <- data.frame(
+  time = as.POSIXct(sapply(btc_prices, function(x) x$time), origin="1970-01-01", tz="UTC"),
+  high = sapply(btc_prices, function(x) x$high),
+  low = sapply(btc_prices, function(x) x$low),
+  open = sapply(btc_prices, function(x) x$open),
+  close = sapply(btc_prices, function(x) x$close)
+)
+btc_prices_df
+```
+
+#### Ethereum (ETH)
+
+```{r}
+parameters <- list(
+  fsym = "ETH",
+  tsym = "USD",
+  limit = limit,
+  toTs = toTs
+)
+response <- GET(url, query=parameters, headers)
+```
+
+```{r}
+data <- content(response, as = "parsed", encoding = "UTF-8")
+eth_prices <- data$Data$Data
+eth_prices_df <- data.frame(
+  time = as.POSIXct(sapply(eth_prices, function(x) x$time), origin="1970-01-01", tz="UTC"),
+  high = sapply(eth_prices, function(x) x$high),
+  low = sapply(eth_prices, function(x) x$low),
+  open = sapply(eth_prices, function(x) x$open),
+  close = sapply(eth_prices, function(x) x$close)
+)
+eth_prices_df
+```
+
+#### Solana (SOL)
+
+```{r}
+parameters <- list(
+  fsym = "SOL",
+  tsym = "USD",
+  limit = limit,
+  toTs = toTs
+)
+response <- GET(url, query=parameters, headers)
+```
+
+```{r}
+data <- content(response, as = "parsed", encoding = "UTF-8")
+sol_prices <- data$Data$Data
+sol_prices_df <- data.frame(
+  time = as.POSIXct(sapply(sol_prices, function(x) x$time), origin="1970-01-01", tz="UTC"),
+  high = sapply(sol_prices, function(x) x$high),
+  low = sapply(sol_prices, function(x) x$low),
+  open = sapply(sol_prices, function(x) x$open),
+  close = sapply(sol_prices, function(x) x$close)
+)
+sol_prices_df
+```
+
+#### Sui Network (SUI)
+
+```{r}
+parameters <- list(
+  fsym = "SUI",
+  tsym = "USD",
+  limit = limit,
+  toTs = toTs
+)
+response <- GET(url, query=parameters, headers)
+```
+
+```{r}
+data <- content(response, as = "parsed", encoding = "UTF-8")
+sui_prices <- data$Data$Data
+sui_prices_df <- data.frame(
+  time = as.POSIXct(sapply(sui_prices, function(x) x$time), origin="1970-01-01", tz="UTC"),
+  high = sapply(sui_prices, function(x) x$high),
+  low = sapply(sui_prices, function(x) x$low),
+  open = sapply(sui_prices, function(x) x$open),
+  close = sapply(sui_prices, function(x) x$close)
+)
+sui_prices_df
+```
+
+#### Litecoin (LTC)
+
+```{r}
+parameters <- list(
+  fsym = "LTC",
+  tsym = "USD",
+  limit = limit,
+  toTs = toTs
+)
+response <- GET(url, query=parameters, headers)
+```
+
+```{r}
+data <- content(response, as = "parsed", encoding = "UTF-8")
+ltc_prices <- data$Data$Data
+ltc_prices_df <- data.frame(
+  time = as.POSIXct(sapply(ltc_prices, function(x) x$time), origin="1970-01-01", tz="UTC"),
+  high = sapply(ltc_prices, function(x) x$high),
+  low = sapply(ltc_prices, function(x) x$low),
+  open = sapply(ltc_prices, function(x) x$open),
+  close = sapply(ltc_prices, function(x) x$close)
+)
+ltc_prices_df
+```
+
+#### Create Data Frame
+
+```{r}
+coin_data <- data.frame(
+  time = btc_prices_df$time,
+  btc_close = btc_prices_df$close,
+  eth_close = eth_prices_df$close,
+  sol_close = sol_prices_df$close, 
+  sui_close = sui_prices_df$close,
+  ltc_close = ltc_prices_df$close
+)
+coin_data
+```
+
+### EDA
+
+```{r}
+btc_plot <- (ggplot(coin_data) + theme_minimal()
+  + geom_smooth(aes(x=time, y=btc_close), color="red")
+  + labs(title="BTC Price", x="BTC ($)", y="Time (Hourly)"))
+
+btc_plot
+```
+
+```{r}
+eth_plot <- (ggplot(coin_data) + theme_minimal()
+  + geom_smooth(aes(x=time, y=eth_close), color="purple")
+  + labs(title="ETH Price", x="ETH ($)", y="Time (Hourly)"))
+
+eth_plot
+```
+
+```{r}
+sol_plot <- (ggplot(coin_data) + theme_minimal()
+  + geom_smooth(aes(x=time, y=sol_close), color="blue")
+  + labs(title="SOL Price", x="SOL ($)", y="Time (Hourly)"))
+
+sol_plot
+```
+
+```{r}
+sui_plot <- (ggplot(coin_data) + theme_minimal()
+  + geom_smooth(aes(x=time, y=sui_close), color="darkgreen")
+  + labs(title="SUI Price", x="SUI ($)", y="Time (Hourly)"))
+
+sui_plot
+```
+
+```{r}
+ltc_plot <- (ggplot(coin_data) + theme_minimal()
+  + geom_smooth(aes(x=time, y=ltc_close), color="orange")
+  + labs(title="LTC Price", x="LTC ($)", y="Time (Hourly)"))
+
+ltc_plot
+```
+
+### ADF Test
+
+```{r}
+adf_results <- lapply(coin_data[,-1], adf.test)
+
+adf_summary <- data.frame(
+  coin = names(adf_results), 
+  adf_statistic = sapply(adf_results, function(x) x$statistic), 
+  p_value = sapply(adf_results, function(x) x$p.value),
+  stationary = sapply(adf_results, function(x) ifelse(
+    x$p.value < 0.-5, "Stationary", "Non-Stationary"))
+)
+
+adf_summary
+```
+
+### ACF and PACF Plots
+
+#### BTC Plots
+
+```{r}
+btc_acf <- acf(coin_data$btc_close, lag=50, main="BTC ACF Plot")
+btc_pacf <- pacf(coin_data$btc_close, main="BTC PACF Plot")
+```
+
+#### ETH Plots
+
+```{r}
+eth_acf <- acf(coin_data$eth_close, lag=50, main="ETH ACF Plot")
+eth_pacf <- pacf(coin_data$eth_close, main="ETH PACF Plot")
+```
+
+#### SOL Plots
+
+```{r}
+sol_acf <- acf(coin_data$sol_close, lag=50, main="SOL ACF Plot")
+sol_pacf <- pacf(coin_data$sol_close, main="SOL PACF Plot")
+```
+
+#### SUI Plots
+
+```{r}
+sui_acf <- acf(coin_data$sui_close, lag=50, main="SUI ACF Plot")
+sui_pacf <- pacf(coin_data$sui_close, main="SUI PACF Plot")
+```
+
+#### LTC Plots
+
+```{r}
+ltc_acf <- acf(coin_data$ltc_close, lag=50, main="LTC ACF Plot")
+ltc_pacf <- pacf(coin_data$ltc_close, main="LTC PACF Plot")
+```
+
+### Seasonal Decomposition
+
+#### BTC Decomposition
+
+```{r}
+btc_ts <- ts(coin_data$btc_close, frequency = 24)
+btc_decomp <- decompose(btc_ts, type = "additive")
+plot(btc_decomp)
+```
+
+#### ETH Decomposition
+
+```{r}
+eth_ts <- ts(coin_data$eth_close, frequency = 24)
+eth_decomp <- decompose(eth_ts, type = "additive")
+plot(eth_decomp)
+```
+
+#### SOL Decomposition
+
+```{r}
+sol_ts <- ts(coin_data$sol_close, frequency = 24)
+sol_decomp <- decompose(sol_ts, type = "additive")
+plot(sol_decomp)
+```
+
+#### SUI Decomposition
+
+```{r}
+sui_ts <- ts(coin_data$sui_close, frequency = 24)
+sui_decomp <- decompose(sui_ts, type = "additive")
+plot(sui_decomp)
+```
+
+#### LTC Decomposition
+
+```{r}
+ltc_ts <- ts(coin_data$ltc_close, frequency = 24)
+ltc_decomp <- decompose(ltc_ts, type = "additive")
+plot(ltc_decomp)
+```
+
+### Time Series Models
+
+```{r}
+train_size <- length(btc_ts) - (2*24)
+
+btc_train <- btc_ts[1:train_size]
+btc_test <- btc_ts[(train_size+1):length(btc_ts)]
+
+forecast_steps <- length(btc_test)
+```
+
+#### ETH Model
+
+```{r}
+eth_train <- eth_ts[1:train_size]
+eth_test <- eth_ts[(train_size + 1):length(eth_ts)]
+```
+
+```{r}
+eth_arimax <- auto.arima(eth_train, xreg=btc_train, seasonal=TRUE)
+
+summary(eth_arimax)
+```
+
+```{r}
+eth_forecast <- forecast(eth_arimax, xreg=btc_test, h=forecast_steps)
+
+plot(eth_forecast, 
+     main="ETH Close Forecast (SARIMAX with BTC)")
+lines((train_size+1):length(eth_ts), eth_test, col="red", lwd=2)
+legend("topleft", legend=c("Forecast", "Actual"), col=c("blue","red"), lty=1, lwd=2, cex=0.5)
+```
+
+```{r}
+eth_acc <- accuracy(eth_forecast$mean, eth_test)
+print(eth_acc)
+```
+
+#### SOL Model
+
+```{r}
+sol_train <- sol_ts[1:train_size]
+sol_test <- sol_ts[(train_size + 1):length(sol_ts)]
+```
+
+```{r}
+sol_arimax <- auto.arima(sol_train, xreg=btc_train, seasonal=TRUE)
+
+summary(sol_arimax)
+```
+
+```{r}
+sol_forecast <- forecast(sol_arimax, xreg=btc_test, h=forecast_steps)
+
+plot(sol_forecast, 
+     main="SOL Close Forecast (SARIMAX with BTC)")
+lines((train_size+1):length(sol_ts), sol_test, col="red", lwd=2)
+legend("topleft", legend=c("Forecast", "Actual"), col=c("blue","red"), lty=1, lwd=2, cex=0.5)
+```
+
+```{r}
+sol_acc <- accuracy(sol_forecast$mean, sol_test)
+print(sol_acc)
+```
+
+#### SUI Model
+
+```{r}
+sui_train <- sui_ts[1:train_size]
+sui_test <- sui_ts[(train_size + 1):length(sui_ts)]
+```
+
+```{r}
+sui_arimax <- auto.arima(sui_train, xreg=btc_train, seasonal=TRUE)
+
+summary(sui_arimax)
+```
+
+```{r}
+sui_forecast <- forecast(sui_arimax, xreg=btc_test, h=forecast_steps)
+
+plot(sui_forecast, 
+     main="SUI Close Forecast (SARIMAX with BTC)")
+lines((train_size+1):length(sui_ts), sui_test, col="red", lwd=2)
+legend("topleft", legend=c("Forecast", "Actual"), col=c("blue","red"), lty=1, lwd=2, cex=0.5)
+```
+
+```{r}
+sui_acc <- accuracy(sui_forecast$mean, sui_test)
+print(sui_acc)
+```
+
+#### LTC Model
+
+```{r}
+ltc_train <- ltc_ts[1:train_size]
+ltc_test <- ltc_ts[(train_size + 1):length(ltc_ts)]
+```
+
+```{r}
+ltc_arimax <- auto.arima(ltc_train, xreg=btc_train, seasonal=TRUE)
+
+summary(ltc_arimax)
+```
+
+```{r}
+ltc_forecast <- forecast(ltc_arimax, xreg=btc_test, h=forecast_steps)
+
+plot(ltc_forecast, 
+     main="LTC Close Forecast (SARIMAX with BTC)")
+lines((train_size+1):length(ltc_ts), ltc_test, col="red", lwd=2)
+legend("topleft", legend=c("Forecast", "Actual"), col=c("blue","red"), lty=1, lwd=2, cex=0.5)
+```
+
+```{r}
+ltc_acc <- accuracy(ltc_forecast$mean, ltc_test)
+print(ltc_acc)
+```
+
+### Correlation of Altcoins to BTC
+
+```{r}
+coin_data$btc_return <- c(NA, diff(coin_data$btc_close) / head(coin_data$btc_close, -1)) * 100
+coin_data$eth_return <- c(NA, diff(coin_data$eth_close) / head(coin_data$eth_close, -1)) * 100
+coin_data$sol_return <- c(NA, diff(coin_data$sol_close) / head(coin_data$sol_close, -1)) * 100
+coin_data$sui_return <- c(NA, diff(coin_data$sui_close) / head(coin_data$sui_close, -1)) * 100
+coin_data$ltc_return <- c(NA, diff(coin_data$ltc_close) / head(coin_data$ltc_close, -1)) * 100
+
+```
+
+```{r}
+correlation_btc_eth <- cor(coin_data$btc_return, coin_data$eth_return, use = "complete.obs")
+correlation_btc_sol <- cor(coin_data$btc_return, coin_data$sol_return, use = "complete.obs")
+correlation_btc_sui <- cor(coin_data$btc_return, coin_data$sui_return, use = "complete.obs")
+correlation_btc_ltc <- cor(coin_data$btc_return, coin_data$ltc_return, use = "complete.obs")
+```
+
+```{r}
+cat("Correlation between BTC and ETH:", correlation_btc_eth, "\n")
+cat("Correlation between BTC and SOL:", correlation_btc_sol, "\n")
+cat("Correlation between BTC and SUI:", correlation_btc_sui, "\n")
+cat("Correlation between BTC and LTC:", correlation_btc_ltc, "\n")
+```
