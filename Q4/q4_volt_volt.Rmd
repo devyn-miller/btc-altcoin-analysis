@@ -1,0 +1,637 @@
+---
+title: "Final project Question 4"
+output: html_notebook
+---
+
+How does Bitcoin's volatility today affect altcoin outcomes today?
+
+```{r}
+#install.packages(c("httr", "zoo", "ggplot2", "mgcv", "Metrics", "dplyr"))
+library(httr)
+library(zoo)
+library(ggplot2)
+library(mgcv)
+library(Metrics)
+library(dplyr)
+```
+
+
+Data Fetching
+```{r}
+api_key <- '2c94c1c4629bdbeab16ba80718505fe376156b9d1531c8f9ea8635e0f29ad7ca'
+
+fetch_crypto_data <- function(symbol, currency = "USD", limit = 1500) {
+  base_url <- "https://min-api.cryptocompare.com/data/v2/histoday"
+  response <- GET(base_url,
+                  query = list(
+                    fsym = symbol,
+                    tsym = currency,
+                    limit = limit,
+                    api_key = api_key
+                  ))
+  if (status_code(response) == 200) {
+    data <- content(response, as = "parsed", simplifyDataFrame = TRUE)$Data$Data
+    return(as.data.frame(data))
+  } else {
+    stop(paste("Failed to fetch data for:", symbol))
+  }
+}
+
+btc_data <- fetch_crypto_data("BTC")
+eth_data <- fetch_crypto_data("ETH")
+sol_data <- fetch_crypto_data("SOL")
+bnb_data <- fetch_crypto_data("BNB")
+xrp_data <- fetch_crypto_data("XRP")
+
+```
+
+
+```{r}
+# Function to preprocess data: convert time and calculate returns and volatility
+preprocess_data <- function(data, coin_name) {
+  data$date <- as.Date(as.POSIXct(data$time, origin = "1970-01-01"))
+  data <- data[order(data$date), ]  # Ensure data is sorted by date
+  data$return <- c(NA, diff(log(data$close)))
+  
+  # Calculate volatility (30-day rolling standard deviation)
+  data$volatility <- rollapply(data$return, width = 30, FUN = sd, fill = NA, align = "right")
+  
+  # Rename columns for clarity
+  data <- data %>%
+    select(date, return, volatility) %>%
+    rename_with(.fn = ~ paste0(coin_name, "_", .), .cols = c("return", "volatility"))
+  
+  return(data)
+}
+
+# Preprocess data for BTC and altcoins
+btc_data <- preprocess_data(btc_data, "btc")
+eth_data <- preprocess_data(eth_data, "eth")
+sol_data <- preprocess_data(sol_data, "sol")
+bnb_data <- preprocess_data(bnb_data, "bnb")
+xrp_data <- preprocess_data(xrp_data, "xrp")
+
+
+print(btc_data)
+```
+
+```{r}
+# Function to merge BTC volatility with altcoin volatility
+merge_volatility_data <- function(btc_data, alt_data, alt_name) {
+  merged_data <- merge(btc_data[, c("date", "btc_volatility")],
+                       alt_data[, c("date", paste0(alt_name, "_volatility"))],
+                       by = "date")
+  names(merged_data) <- c("date", "btc_volatility", paste0(alt_name, "_volatility"))
+  return(merged_data)
+}
+
+# Merge data for each altcoin
+data_eth <- merge_volatility_data(btc_data, eth_data, "eth")
+data_sol <- merge_volatility_data(btc_data, sol_data, "sol")
+data_bnb <- merge_volatility_data(btc_data, bnb_data, "bnb")
+data_xrp <- merge_volatility_data(btc_data, xrp_data, "xrp")
+```
+
+```{r}
+# Function to count non-NA volatility data
+count_volatility_data <- function(data, coin_name) {
+  total_rows <- nrow(data)
+  non_na_volatility <- sum(!is.na(data[[paste0(coin_name, "_volatility")]]))
+  na_volatility <- sum(is.na(data[[paste0(coin_name, "_volatility")]]))
+  
+  return(data.frame(
+    Crypto = coin_name,
+    Total_Rows = total_rows,
+    Non_NA_Volatility = non_na_volatility,
+    NA_Volatility = na_volatility
+  ))
+}
+
+# Apply the function to all cryptocurrencies
+btc_info <- count_volatility_data(btc_data, "btc")
+eth_info <- count_volatility_data(eth_data, "eth")
+sol_info <- count_volatility_data(sol_data, "sol")
+bnb_info <- count_volatility_data(bnb_data, "bnb")
+xrp_info <- count_volatility_data(xrp_data, "xrp")
+
+# Combine results
+volatility_data_summary <- rbind(btc_info, eth_info, sol_info, bnb_info, xrp_info)
+
+# View the summary
+print(volatility_data_summary)
+
+```
+
+
+```{r}
+# Scatter plot of BTC volatility vs. Altcoins volatility
+
+# BTC vs ETH
+ggplot(data_eth, aes(x = btc_volatility, y = eth_volatility)) +
+  geom_point(alpha = 0.5, color = "red") +
+  labs(
+    title = "BTC Volatility vs ETH Volatility",
+    x = "BTC Volatility",
+    y = "ETH Volatility"
+  ) +
+  theme_minimal()
+
+# BTC vs SOL
+ggplot(data_sol, aes(x = btc_volatility, y = sol_volatility)) +
+  geom_point(alpha = 0.5, color = "green") +
+  labs(
+    title = "BTC Volatility vs SOL Volatility",
+    x = "BTC Volatility",
+    y = "SOL Volatility"
+  ) +
+  theme_minimal()
+
+# BTC vs BNB
+ggplot(data_bnb, aes(x = btc_volatility, y = bnb_volatility)) +
+  geom_point(alpha = 0.5, color = "orange") +
+  labs(
+    title = "BTC Volatility vs BNB Volatility",
+    x = "BTC Volatility",
+    y = "BNB Volatility"
+  ) +
+  theme_minimal()
+
+# BTC vs XRP
+ggplot(data_xrp, aes(x = btc_volatility, y = xrp_volatility)) +
+  geom_point(alpha = 0.5, color = "purple") +
+  labs(
+    title = "BTC Volatility vs XRP Volatility",
+    x = "BTC Volatility",
+    y = "XRP Volatility"
+  ) +
+  theme_minimal()
+
+
+```
+
+
+
+```{r}
+ggplot(btc_data, aes(x = date, y = btc_volatility)) +
+  geom_line(color = "blue") +
+  labs(title = "BTC Volatility Over Time", x = "Date", y = "Volatility")
+
+ggplot(eth_data, aes(x = date, y = eth_volatility)) +
+  geom_line(color = "red") +
+  labs(title = "ETH Volatility Over Time", x = "Date", y = "Volatility")
+ggplot(sol_data, aes(x = date, y = sol_volatility)) +
+  geom_line(color = "green") +
+  labs(title = "SOL Volatility Over Time", x = "Date", y = "Volatility")
+
+ggplot(bnb_data, aes(x = date, y = bnb_volatility)) +
+  geom_line(color = "orange") +
+  labs(title = "BNB Volatility Over Time", x = "Date", y = "Volatility")
+
+ggplot(xrp_data, aes(x = date, y = xrp_volatility)) +
+  geom_line(color = "purple") +
+  labs(title = "XRP Volatility Over Time", x = "Date", y = "Volatility")
+
+all_volatility_data <- btc_data %>%
+  select(date, btc_volatility) %>%
+  rename(volatility = btc_volatility) %>%
+  mutate(crypto = "BTC") %>%
+  bind_rows(
+    eth_data %>%
+      select(date, eth_volatility) %>%
+      rename(volatility = eth_volatility) %>%
+      mutate(crypto = "ETH"),
+    sol_data %>%
+      select(date, sol_volatility) %>%
+      rename(volatility = sol_volatility) %>%
+      mutate(crypto = "SOL"),
+    bnb_data %>%
+      select(date, bnb_volatility) %>%
+      rename(volatility = bnb_volatility) %>%
+      mutate(crypto = "BNB"),
+    xrp_data %>%
+      select(date, xrp_volatility) %>%
+      rename(volatility = xrp_volatility) %>%
+      mutate(crypto = "XRP")
+  )
+```
+
+```{r}
+ggplot(all_volatility_data, aes(x = date, y = volatility, color = crypto)) +
+  geom_line() +
+  scale_color_manual(
+    values = c(
+      "BTC" = "blue",
+      "ETH" = "red",
+      "SOL" = "green",
+      "BNB" = "orange",
+      "XRP" = "purple"
+    )
+  ) +
+  labs(
+    title = "Volatility Over Time for BTC, ETH, SOL, BNB, and XRP",
+    x = "Date",
+    y = "Volatility",
+    color = "Cryptocurrency"
+  ) +
+  theme_minimal()
+
+ggplot(all_volatility_data, aes(x = date, y = volatility, color = crypto)) +
+  geom_line() +
+  scale_color_manual(
+    values = c(
+      "BTC" = "blue",
+      "ETH" = "red",
+      "SOL" = "green",
+      "BNB" = "orange",
+      "XRP" = "purple"
+    )
+  ) +
+  labs(
+    title = "Volatility Over Time for BTC, ETH, SOL, BNB, and XRP",
+    x = "Date",
+    y = "Volatility",
+    color = "Cryptocurrency"
+  ) +
+  ylim(0, 0.2) +
+  theme_minimal()
+```
+
+
+```{r}
+ggplot(btc_data, aes(x = btc_volatility)) +
+  geom_density(bins = 30, fill = "blue", alpha = 0.5) +
+  labs(title = "Distribution of BTC Volatility", x = "Volatility", y = "Frequency")
+
+ggplot(eth_data, aes(x = eth_volatility)) +
+  geom_density(fill = "red", alpha = 0.5) +
+  labs(title = "Density Plot of ETH Volatility", x = "Volatility", y = "Density")
+
+ggplot(sol_data, aes(x = sol_volatility)) +
+  geom_density(fill = "green", alpha = 0.5) +
+  labs(title = "Density Plot of SOL Volatility", x = "Volatility", y = "Density")
+
+ggplot(bnb_data, aes(x = bnb_volatility)) +
+  geom_density(fill = "orange", alpha = 0.5) +
+  labs(title = "Density Plot of BNB Volatility", x = "Volatility", y = "Density")
+
+ggplot(xrp_data, aes(x = xrp_volatility)) +
+  geom_density(fill = "purple", alpha = 0.5) +
+  labs(title = "Density Plot of XRP Volatility", x = "Volatility", y = "Density")
+```
+
+
+```{r}
+combined_volatility <- btc_data %>%
+  select(btc_volatility) %>%
+  rename(volatility = btc_volatility) %>%
+  mutate(crypto = "BTC") %>%
+  bind_rows(
+    eth_data %>%
+      select(eth_volatility) %>%
+      rename(volatility = eth_volatility) %>%
+      mutate(crypto = "ETH"),
+    sol_data %>%
+      select(sol_volatility) %>%
+      rename(volatility = sol_volatility) %>%
+      mutate(crypto = "SOL"),
+    bnb_data %>%
+      select(bnb_volatility) %>%
+      rename(volatility = bnb_volatility) %>%
+      mutate(crypto = "BNB"),
+    xrp_data %>%
+      select(xrp_volatility) %>%
+      rename(volatility = xrp_volatility) %>%
+      mutate(crypto = "XRP")
+  )
+
+ggplot(combined_volatility, aes(x = volatility, fill = crypto)) +
+  geom_density(alpha = 0.5) +
+  scale_color_manual(
+    values = c(
+      "BTC" = "blue",
+      "ETH" = "red",
+      "SOL" = "green",
+      "BNB" = "orange",
+      "XRP" = "purple"
+    )
+  ) +
+  labs(
+    title = "Density Plots of Cryptocurrency Volatility",
+    x = "Volatility",
+    y = "Density",
+    fill = "Cryptocurrency"
+  ) +
+  theme_minimal()
+
+ggplot(combined_volatility, aes(x = volatility, fill = crypto)) +
+  geom_density(alpha = 0.5) +
+  scale_color_manual(
+    values = c(
+      "BTC" = "blue",
+      "ETH" = "red",
+      "SOL" = "green",
+      "BNB" = "orange",
+      "XRP" = "purple"
+    )
+  ) +
+  labs(
+    title = "Density Plots of Cryptocurrency Volatility",
+    x = "Volatility",
+    y = "Density",
+    fill = "Cryptocurrency"
+  ) +
+  xlim(0, 0.2) +  # Set x-axis limits
+  theme_minimal()
+
+
+```
+
+```{r}
+# For ETH
+cor_eth <- cor(data_eth$btc_volatility, data_eth$eth_volatility, use = "complete.obs")
+print(paste("Correlation between BTC volatility and ETH volatility:", round(cor_eth, 4)))
+
+# For SOL
+cor_sol <- cor(data_sol$btc_volatility, data_sol$sol_volatility, use = "complete.obs")
+print(paste("Correlation between BTC volatility and SOL volatility:", round(cor_sol, 4)))
+
+# For BNB
+cor_bnb <- cor(data_bnb$btc_volatility, data_bnb$bnb_volatility, use = "complete.obs")
+print(paste("Correlation between BTC volatility and BNB volatility:", round(cor_bnb, 4)))
+
+# For XRP
+cor_xrp <- cor(data_xrp$btc_volatility, data_xrp$xrp_volatility, use = "complete.obs")
+print(paste("Correlation between BTC volatility and XRP volatility:", round(cor_xrp, 4)))
+```
+
+
+```{r}
+# Load required library
+library(reshape2)
+
+# Combine all cryptocurrency data by date
+combined_data <- merge(btc_data, data_eth, by = "date")
+combined_data <- merge(combined_data, data_sol, by = "date")
+combined_data <- merge(combined_data, data_bnb, by = "date")
+combined_data <- merge(combined_data, data_xrp, by = "date")
+
+# Select only volatility columns
+combined_data <- combined_data %>%
+  select(ends_with("volatility"))
+
+# Compute correlation matrix
+cor_matrix <- cor(combined_data, use = "complete.obs")
+
+# Melt the correlation matrix for visualization
+melted_cor_matrix <- melt(cor_matrix)
+
+# Plot the correlation heatmap
+ggplot(melted_cor_matrix, aes(Var1, Var2, fill = value)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", midpoint = 0) +
+  labs(title = "Correlation Heatmap of Volatilities", x = "", y = "") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+
+
+
+```{r}
+# Function to build models for an altcoin
+build_volatility_models <- function(data, alt_name) {
+  # Remove rows with NA values
+  data <- na.omit(data)
+  
+  # GLM without BTC volatility (baseline)
+  glm_baseline <- glm(as.formula(paste0(alt_name, "_volatility ~ 1")), data = data)
+  
+  # GLM with BTC volatility
+  glm_model <- glm(as.formula(paste0(alt_name, "_volatility ~ btc_volatility")), data = data)
+  
+  # GAM without BTC volatility (baseline)
+  gam_baseline <- gam(as.formula(paste0(alt_name, "_volatility ~ 1")), data = data)
+  
+  # GAM with BTC volatility
+  gam_model <- gam(as.formula(paste0(alt_name, "_volatility ~ s(btc_volatility)")), data = data)
+  
+  return(list(glm_baseline = glm_baseline, glm_model = glm_model,
+              gam_baseline = gam_baseline, gam_model = gam_model, data = data))
+}
+
+# Build models for ETH
+models_eth <- build_volatility_models(data_eth, "eth")
+
+# Similarly, build models for SOL, BNB, XRP
+models_sol <- build_volatility_models(data_sol, "sol")
+models_bnb <- build_volatility_models(data_bnb, "bnb")
+models_xrp <- build_volatility_models(data_xrp, "xrp")
+
+```
+
+```{r}
+# Function to perform hypothesis testing
+hypothesis_testing_volatility <- function(models, alt_name) {
+  # GLM
+  print(paste("GLM Hypothesis Testing for", toupper(alt_name), "Volatility"))
+  print(summary(models$glm_model))
+  print(anova(models$glm_baseline, models$glm_model, test = "Chisq"))
+  
+  # GAM
+  print(paste("GAM Hypothesis Testing for", toupper(alt_name), "Volatility"))
+  print(summary(models$gam_model))
+  print(anova(models$gam_baseline, models$gam_model, test = "F"))
+}
+```
+
+```{r}
+hypothesis_testing_volatility(models_eth, "eth")
+```
+
+```{r}
+hypothesis_testing_volatility(models_sol, "sol")
+```
+
+```{r}
+hypothesis_testing_volatility(models_bnb, "bnb")
+```
+
+```{r}
+hypothesis_testing_volatility(models_xrp, "xrp")
+
+```
+
+```{r}
+# Function to collect p-values from hypothesis testing
+collect_p_values <- function(models, alt_name) {
+  # GLM p-value
+  glm_p <- summary(models$glm_model)$coefficients[2, 4]  # P-value of btc_volatility in GLM
+  glm_anova_p <- anova(models$glm_baseline, models$glm_model, test = "Chisq")[2, "Pr(>Chi)"]
+  
+  # GAM p-value
+  gam_p <- summary(models$gam_model)$s.table[, "p-value"][1]  # P-value for s(btc_volatility)
+  gam_anova_p <- anova(models$gam_baseline, models$gam_model, test = "F")[2, "Pr(>F)"]
+  
+  # Return a data frame with p-values
+  return(data.frame(
+    Altcoin = toupper(alt_name),
+    GLM_P_Value = glm_p,
+    GLM_Anova_P_Value = glm_anova_p,
+    GAM_P_Value = gam_p,
+    GAM_Anova_P_Value = gam_anova_p
+  ))
+}
+
+# Collect p-values for each altcoin
+p_values_eth <- collect_p_values(models_eth, "eth")
+p_values_sol <- collect_p_values(models_sol, "sol")
+p_values_bnb <- collect_p_values(models_bnb, "bnb")
+p_values_xrp <- collect_p_values(models_xrp, "xrp")
+
+# Combine all p-values into a single table
+p_values_table <- rbind(p_values_eth, p_values_sol, p_values_bnb, p_values_xrp)
+
+# View the table
+print(p_values_table)
+
+```
+
+```{r}
+# Function to visualize GLM results
+visualize_glm_results <- function(models, alt_name) {
+  data <- models$data
+  
+  # Add predicted values from the GLM model to the data
+  data$pred_glm <- predict(models$glm_model, newdata = data, type = "response")
+  
+  # Plot Actual vs Predicted Volatility for GLM
+  ggplot(data, aes(x = date)) +
+    geom_line(aes(y = data[[paste0(alt_name, "_volatility")]], color = "Actual"), size = 1) +
+    geom_line(aes(y = pred_glm, color = "Predicted GLM"), linetype = "dashed", size = 1) +
+    labs(
+      title = paste("GLM: Actual vs Predicted", toupper(alt_name), "Volatility"),
+      x = "Date",
+      y = "Volatility",
+      color = "Legend"
+    ) +
+    theme_minimal()
+}
+
+# Visualize GLM results for each altcoin
+visualize_glm_results(models_eth, "eth")
+visualize_glm_results(models_sol, "sol")
+visualize_glm_results(models_bnb, "bnb")
+visualize_glm_results(models_xrp, "xrp")
+
+```
+
+
+
+```{r}
+# Function to visualize results
+visualize_volatility_results <- function(models, alt_name) {
+  data <- models$data
+  
+  # Plot Actual vs Predicted Volatility for GLM
+  ggplot(data, aes(x = date)) +
+    geom_line(aes(y = data[[paste0(alt_name, "_volatility")]], color = "Actual")) +
+    geom_line(aes(y = pred_glm, color = "Predicted GLM")) +
+    labs(title = paste("GLM: Actual vs Predicted", toupper(alt_name), "Volatility"),
+         y = "Volatility", color = "Legend")
+  
+  # Plot Actual vs Predicted Volatility for GAM
+  ggplot(data, aes(x = date)) +
+    geom_line(aes(y = data[[paste0(alt_name, "_volatility")]], color = "Actual")) +
+    geom_line(aes(y = pred_gam, color = "Predicted GAM")) +
+    labs(title = paste("GAM: Actual vs Predicted", toupper(alt_name), "Volatility"),
+         y = "Volatility", color = "Legend")
+  
+  # Partial Dependence Plot for GAM
+  plot(models$gam_model, select = 1, shade = TRUE,
+       main = paste("Effect of BTC Volatility on", toupper(alt_name), "Volatility"))
+}
+
+# Visualize results
+visualize_volatility_results(models_eth, "eth")
+visualize_volatility_results(models_sol, "sol")
+visualize_volatility_results(models_bnb, "bnb")
+visualize_volatility_results(models_xrp, "xrp")
+
+```
+
+
+```{r}
+visualize_volatility_results <- function(models, alt_name) {
+  data <- models$data
+  
+  # Add predicted values for GLM and GAM
+  data$pred_glm <- predict(models$glm_model, newdata = data, type = "response")
+  data$pred_gam <- predict(models$gam_model, newdata = data, type = "response")
+  
+  # Plot Actual vs Predicted Volatility for GLM
+  p1 <- ggplot(data, aes(x = date)) +
+    geom_line(aes(y = data[[paste0(alt_name, "_volatility")]], color = "Actual"), size = 1) +
+    geom_line(aes(y = pred_glm, color = "Predicted GLM"), linetype = "dashed", size = 1) +
+    labs(title = paste("GLM: Actual vs Predicted", toupper(alt_name), "Volatility"),
+         y = "Volatility", color = "Legend") +
+    theme_minimal()
+  
+  print(p1)
+  
+  # Plot Actual vs Predicted Volatility for GAM
+  p2 <- ggplot(data, aes(x = date)) +
+    geom_line(aes(y = data[[paste0(alt_name, "_volatility")]], color = "Actual"), size = 1) +
+    geom_line(aes(y = pred_gam, color = "Predicted GAM"), linetype = "dashed", size = 1) +
+    labs(title = paste("GAM: Actual vs Predicted", toupper(alt_name), "Volatility"),
+         y = "Volatility", color = "Legend") +
+    theme_minimal()
+  
+  print(p2)
+  
+  # Partial Dependence Plot for GAM
+  plot(models$gam_model, select = 1, shade = TRUE,
+     main = paste("GAM Effect of BTC Volatility on", toupper(alt_name), "Volatility"))
+}
+
+```
+
+```{r}
+visualize_volatility_results(models_eth, "eth")
+```
+
+```{r}
+visualize_volatility_results(models_sol, "sol")
+```
+
+```{r}
+visualize_volatility_results(models_bnb, "bnb")
+```
+
+```{r}
+visualize_volatility_results(models_xrp, "xrp")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
