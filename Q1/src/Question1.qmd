@@ -1,6 +1,5 @@
 ---
 title: "CPSC540_Final_Project_Q1"
-author: "Tyler Lewis"
 format: html
 editor: visual
 ---
