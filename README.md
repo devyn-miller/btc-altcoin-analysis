@@ -1,5 +1,3 @@
-# FINAL PROJECT
-
 ## BTC-Altcoin Analysis
 
 ### Contributors 
