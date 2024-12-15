@@ -1,0 +1,95 @@
+---
+title: "CPSC540_Final_Project_Q1"
+author: "Tyler Lewis"
+format: html
+editor: visual
+---
+
+## Q1
+
+```{r}
+library(readr)
+df <- read_csv("/Users/fsl/Documents/GitHub/btc-altcoin-analysis/Q1/data/merged_data.csv",
+                 col_names = TRUE)
+spec(df)
+```
+
+```{r}
+# Load required libraries
+library(tidyverse)
+library(corrplot)
+library(lubridate)
+
+# Create lagged variables for analysis
+lagged_df <- df %>%
+  mutate(timestamp = as.Date(timestamp)) %>%
+  mutate(
+    across(
+      c(fear_greed_value, m2_supply, m2_supply_month_pct_change,
+        gld_etf_price_gold, futures_price_gold, dxy_usd_index),
+      list(
+        lag1w = ~lag(., 7),
+        lag2w = ~lag(., 14),
+        lag3w = ~lag(., 21),
+        lag4w = ~lag(., 28)
+      )
+    )
+  )
+
+# Select only price_btc correlations
+cor_data <- lagged_df %>%
+  select(-timestamp, -fear_greed_classification) %>%
+  select(price_btc, fear_greed_value, contains("fear_greed_value_lag"),
+         exchange_volume_btc,
+         m2_supply, contains("m2_supply_lag"),
+         m2_supply_month_pct_change, contains("m2_supply_month_pct_change_lag"),
+         gld_etf_price_gold, contains("gld_etf_price_gold_lag"),
+         futures_price_gold, contains("futures_price_gold_lag"),
+         dxy_usd_index, contains("dxy_usd_index_lag"))
+
+# Calculate correlations
+cor_matrix <- cor(cor_data, use = "pairwise.complete.obs", method = "pearson")
+
+# Extract only correlations with price_btc
+btc_cors <- cor_matrix[1, ]
+
+# Create a matrix for visualization
+plot_matrix <- matrix(btc_cors[-1])  # Remove self-correlation
+rownames(plot_matrix) <- names(btc_cors)[-1]
+colnames(plot_matrix) <- "Correlation with BTC Price"
+
+# Clean up variable names for plotting
+clean_names <- rownames(plot_matrix) %>%
+  str_replace("_lag1w", " (1w lag)") %>%
+  str_replace("_lag2w", " (2w lag)") %>%
+  str_replace("_lag3w", " (3w lag)") %>%
+  str_replace("_lag4w", " (4w lag)") %>%
+  str_replace_all("_", " ")
+
+rownames(plot_matrix) <- clean_names
+
+# Create correlation plot
+par(mar = c(4, 15, 4, 4))  # Adjust margins for better label visibility
+corrplot(plot_matrix,
+         is.corr = FALSE,
+         method = "color",
+         cl.ratio = 0.2,
+         cl.align = "l",
+         tl.col = "black",
+         tl.srt = 0,        # Horizontal labels
+         tl.cex = 0.8,      # Larger text size
+         cl.cex = 0.8,      # Larger legend text
+         number.cex = 0.8,  # Larger correlation numbers
+         addCoef.col = "black",
+         col = colorRampPalette(c("#D73027", "#FFFFFF", "#4575B4"))(100))
+
+# Print strongest correlations in descending order
+cor_df <- data.frame(
+  Variable = rownames(plot_matrix),
+  Correlation = plot_matrix[,1]
+) %>%
+  arrange(desc(abs(Correlation))) %>%
+  filter(abs(Correlation) >= 0.3)
+
+print(cor_df)
+```
